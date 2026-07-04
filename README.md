@@ -11,6 +11,7 @@ Dumpspace Viewer is designed to help developers and reverse engineers work with 
 - **Code Generation**: Generate C++ and C# offset code for your projects
 - **Collection Management**: Organize and manage offsets and members into collections
 - **Advanced Member Search**: Search for members across inheritance chains and referenced types
+- **MCP Server**: Query dumps programmatically from AI assistants (Claude Code / Codex) over the Model Context Protocol
 
 Useful for modding, reverse engineering, and Unreal Engine development workflows.
 
@@ -94,6 +95,26 @@ The built application will be in the `dist` folder:
    - Generate C++ or C# offset code from collections
    - Export/import collections for sharing
 
+## MCP Server (Claude Code / Codex)
+
+In addition to the desktop UI, this project ships a local stdio [MCP](https://modelcontextprotocol.io) server so AI assistants can query dumps directly. See [docs/MCP.md](docs/MCP.md) for full setup.
+
+Run it:
+```bash
+npm run mcp
+```
+
+It exposes these tools:
+
+- `load_dump_folder` — load a folder of Dumper-7 JSON files (required first)
+- `get_dump_status` — report the loaded folder and per-kind symbol counts
+- `search_symbols` — search classes, structs, functions, enums, and offsets (glob `*`, OR `|`, filters like `kind:` and `inherits:`)
+- `search_members` — search a class/struct's members by name or type, optionally including inherited members
+- `get_symbol_detail` — expand a symbol: class/struct size and members, enum values, or a function's signature, address, and flags
+- `explain_type_relationship` — determine whether one type can be cast to another via inheritance
+
+Register it with Claude Code by pointing an MCP server entry at `node src/mcp/server.mjs`, or with Codex via `.codex/config.toml`.
+
 ## Keyboard Shortcuts
 
 - `Ctrl+F`: Focus search input
@@ -152,8 +173,18 @@ Dumpspace/
 │   │   ├── codegen.js       # Code generation
 │   │   ├── offsetsGenerator.js  # Offset code generation
 │   │   └── utils.js         # Utility functions
+│   ├── core/                 # Dump parsing/query engine (shared by the MCP server)
+│   │   ├── dumpspaceSession.js  # Load, index, and query a dump
+│   │   ├── query.js         # Glob/OR/regex query matching
+│   │   ├── paging.js        # Cursor-based pagination
+│   │   └── eventBus.js      # Lightweight event emitter
+│   ├── mcp/
+│   │   └── server.mjs       # Stdio MCP server
 │   └── styles/
 │       └── main.css          # Application styles
+├── tests/                    # Unit tests (node --test)
+├── docs/
+│   └── MCP.md                # MCP server documentation
 ├── package.json
 └── README.md
 ```
