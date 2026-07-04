@@ -28,6 +28,7 @@ class DumpspaceSession {
     this.symbols = [];
     this.symbolById = new Map();
     this.classLikeByName = new Map();
+    this.classLikeByLowerName = new Map();
     this.childrenByName = new Map();
     this.symbolByName = new Map();
     this.functionNamesByOwner = new Map();
@@ -86,6 +87,7 @@ class DumpspaceSession {
     this.symbols = [];
     this.symbolById = new Map();
     this.classLikeByName = new Map();
+    this.classLikeByLowerName = new Map();
     this.childrenByName = new Map();
     this.functionNamesByOwner = new Map();
 
@@ -149,8 +151,16 @@ class DumpspaceSession {
         raw
       };
       this.classLikeByName.set(name, symbol);
+      this.classLikeByLowerName.set(name.toLowerCase(), symbol);
       this.addSymbol(symbol);
     }
+  }
+
+  // Resolve a class/struct by name, tolerating case differences (UE type names
+  // do not collide on case). Returns the symbol or null.
+  getClassLike(name) {
+    const bare = normalizeSymbolName(name);
+    return this.classLikeByName.get(bare) || this.classLikeByLowerName.get(bare.toLowerCase()) || null;
   }
 
   addSimpleSymbols(kind, source) {
@@ -222,13 +232,13 @@ class DumpspaceSession {
 
   searchMembers(options = {}) {
     const owner = options.owner || options.symbolId;
-    const ownerName = normalizeSymbolName(owner);
-    const symbol = this.classLikeByName.get(ownerName);
+    const symbol = this.getClassLike(owner);
     if (!symbol) {
       const result = emptyPage(options, this);
       result.searched = { classes: [], totalMembers: 0, note: `class/struct '${owner}' not found` };
       return result;
     }
+    const ownerName = symbol.name;
 
     const searchFields = new Set(options.searchFields || ['name']);
     const owners = options.includeInherited
@@ -296,13 +306,14 @@ class DumpspaceSession {
       return { query: raw, found: false, reason: "expected 'ClassName::MemberName'" };
     }
 
-    const className = normalizeSymbolName(raw.slice(0, idx).trim());
+    const requestedClass = raw.slice(0, idx).trim();
     const memberName = raw.slice(idx + 2).trim();
-    const symbol = this.classLikeByName.get(className);
+    const symbol = this.getClassLike(requestedClass);
     if (!symbol) {
-      return { query: raw, found: false, reason: `class/struct '${className}' not found` };
+      return { query: raw, found: false, reason: `class/struct '${requestedClass}' not found` };
     }
 
+    const className = symbol.name;
     const owners = includeInherited ? this.getInheritancePath(className) : [className];
     let membersScanned = 0;
     const candidateNames = [];
@@ -471,6 +482,7 @@ class DumpspaceSession {
       this.classLikeByName.get(bareName) ||
       this.symbolByName.get(bareName) ||
       this.symbolByName.get(idOrName) ||
+      this.classLikeByLowerName.get(bareName.toLowerCase()) ||
       null
     );
   }

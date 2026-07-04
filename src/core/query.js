@@ -30,7 +30,12 @@ function matchesQuery(value, query, options = {}) {
 
   return terms.some((term) => {
     if (options.regex) {
-      return new RegExp(term, 'i').test(text);
+      try {
+        return new RegExp(term, 'i').test(text);
+      } catch {
+        // Invalid regex: degrade to a literal substring match instead of crashing.
+        return text.toLowerCase().includes(term.toLowerCase());
+      }
     }
 
     if (term.includes('*')) {

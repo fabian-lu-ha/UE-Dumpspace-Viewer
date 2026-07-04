@@ -357,6 +357,30 @@ test('resolveOffsets suggests close names on a miss and resolves case-insensitiv
   assert.ok(fnTypo.results[0].suggestions.includes('K2_DestroyActor'));
 });
 
+test('invalid regex degrades to substring match instead of throwing', () => {
+  const session = new DumpspaceSession();
+  session.loadData({ classes: { AActor: [{ __InheritInfo: [] }] } });
+
+  assert.doesNotThrow(() => session.searchSymbols({ query: '(unclosed', regex: true }));
+  // A valid regex still works.
+  const hit = session.searchSymbols({ query: '^AAct', regex: true, kinds: ['class'] });
+  assert.ok(hit.items.some((i) => i.name === 'AActor'));
+});
+
+test('class lookups tolerate case differences', () => {
+  const session = new DumpspaceSession();
+  session.loadData({
+    classes: {
+      UObject: [{ __InheritInfo: [] }],
+      AActor: [{ __InheritInfo: ['UObject'] }, { RootComponent: [['USceneComponent', 'C', '*', []], 0x1e0, 0x8, 1] }]
+    }
+  });
+
+  assert.equal(session.resolveOffsets({ queries: ['aactor::rootcomponent'] }).results[0].found, true);
+  assert.equal(session.searchMembers({ owner: 'AACTOR', query: '*' }).items.length, 1);
+  assert.equal(session.getSymbolDetail({ name: 'aactor' }).found, true);
+});
+
 test('memberLimit 0 returns all members uncapped', () => {
   const session = new DumpspaceSession({ defaultLimit: 2, maxLimit: 3 });
   session.loadData({
