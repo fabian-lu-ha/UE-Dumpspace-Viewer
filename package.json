@@ -1,6 +1,6 @@
 {
   "name": "dumpspace-viewer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Modern Dumpspace Viewer for Unreal Engine dump data",
   "main": "src/main.js",
   "scripts": {
@@ -8,6 +8,7 @@
     "test": "node --test",
     "mcp": "node src/mcp/server.mjs",
     "mcp:install": "node scripts/install-mcp.mjs",
+    "update": "git pull --ff-only && npm install",
     "build": "electron-builder",
     "build:win": "electron-builder --win"
   },

@@ -113,14 +113,26 @@ Then reconnect your client (Claude Code: `/mcp`; oh-my-pi: `/mcp reload`) and as
 It exposes these tools:
 
 - `load_dump_folder` — load a folder of Dumper-7 JSON files (required first)
-- `get_dump_status` — report the loaded folder and per-kind symbol counts
+- `get_dump_status` — health check: server version, loaded flag, loaded folder, and per-kind symbol counts
 - `search_symbols` — search classes, structs, functions, enums, and offsets (glob `*`, OR `|`, filters like `kind:` and `inherits:`)
 - `search_members` — search a class/struct's members by name or type, optionally including inherited members
 - `get_symbol_detail` — expand a symbol: class/struct size and members, enum values, or a function's signature, address, and flags (`memberLimit: 0` returns all members; `raw: true` includes the raw JSON entry)
 - `resolve_offsets` — resolve many `ClassName::MemberName` queries to offsets in one call; searches inherited members and falls back to a same-named function's address
 - `explain_type_relationship` — determine whether one type can be cast to another via inheritance
 
-Register it with Claude Code by pointing an MCP server entry at `node src/mcp/server.mjs`, or with Codex via `.codex/config.toml`.
+### Updating
+
+To update an existing install (both the app and the MCP server) to the latest version:
+
+```bash
+npm run update          # git pull + npm install
+```
+
+Then **reconnect the MCP client** so it reloads the server (Claude Code: `/mcp` -> reconnect; Codex: restart; oh-my-pi: `/mcp reload`). The registration points at `src/mcp/server.mjs` by path, so pulling new code is enough — you do not need to re-register unless you moved the repo.
+
+Notes:
+- Updating from a version **before the MCP existed**? Run `npm run mcp:install` once to register it (and `npm install` to pull the new `@modelcontextprotocol/sdk` and `zod` dependencies — `npm run update` already does this).
+- Check the running server version any time by calling `get_dump_status` (its `serverVersion` field). If it lags the version in `package.json`, the client is still running an old process — reconnect it.
 
 ## Keyboard Shortcuts
 

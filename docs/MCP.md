@@ -36,6 +36,22 @@ Then **reconnect** the client and ask it to call `load_dump_folder` with your du
 - Codex: restart Codex
 - oh-my-pi: `/mcp reload`
 
+### Updating an existing install
+
+```bash
+npm run update   # git pull --ff-only + npm install
+```
+
+Then reconnect the client so it reloads the server process:
+
+- Claude Code: `/mcp` -> reconnect
+- Codex: restart Codex
+- oh-my-pi: `/mcp reload`
+
+The registration points at `src/mcp/server.mjs` by path, so new code is picked up on reconnect without re-registering (unless you moved the repo, in which case re-run `npm run mcp:install`). If you are updating from a version that predates the MCP server, run `npm run mcp:install` once after updating.
+
+Check the running version with `get_dump_status` - its `serverVersion` should match `version` in `package.json`. If it is behind, the client is still running an old process; reconnect it.
+
 ### Manual registration (optional)
 
 If you prefer to register it yourself, or use another client, the CLIs are:

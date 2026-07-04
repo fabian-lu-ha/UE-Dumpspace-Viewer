@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 const require = createRequire(import.meta.url);
 const { DumpspaceSession } = require('../core/dumpspaceSession');
+const { version: SERVER_VERSION } = require('../../package.json');
 
 const session = new DumpspaceSession({
   defaultLimit: Number.parseInt(process.env.DUMPSPACE_MCP_DEFAULT_LIMIT || '50', 10),
@@ -14,11 +15,20 @@ const session = new DumpspaceSession({
 const server = new McpServer(
   {
     name: 'ue-dumpspace-viewer',
-    version: '1.0.0'
+    version: SERVER_VERSION
   },
   {
-    instructions:
-      'Use this server to inspect Unreal Engine Dumper-7 JSON dumps. Call load_dump_folder first. Search tools return compact handles plus nextCursor; use detail tools to expand one handle. Queries support wildcards and OR, for example *health*|player*. Keep limits small unless you need a larger page.'
+    instructions: [
+      'Inspect Unreal Engine Dumper-7 JSON dumps.',
+      'Workflow: 1) load_dump_folder once. 2) search_symbols / search_members to find compact handles.',
+      '3) get_symbol_detail to expand a handle (class size + members, enum values, or a function signature + address).',
+      'For offsets, prefer resolve_offsets: it takes many "Class::Member" strings and returns offsets (members) or',
+      'addresses (functions) in one call - much cheaper than one detail call per symbol.',
+      'Queries support substring, glob wildcards (*), OR (|), and filters (kind:, inherits:, assignableTo:),',
+      'e.g. *health*|player* or kind:class inherits:UObject.',
+      'Paging: search tools return page.nextCursor; pass it back as cursor. Use limit/memberLimit 0 to get all at once',
+      'for bounded sets like a class\'s members. Add raw:true when you need the exact array-of-tuples JSON shape.'
+    ].join(' ')
   }
 );
 
@@ -71,18 +81,23 @@ server.registerTool(
   'get_dump_status',
   {
     title: 'Get Loaded Dump Status',
-    description: 'Return the currently loaded folder and symbol counts. Use this before searching if unsure whether a dump is loaded.',
+    description:
+      'Health check: returns the server version, the loaded flag, the currently loaded folder, and symbol counts. Call this first if unsure whether a dump is loaded, or to check the running server version.',
     inputSchema: {}
   },
-  async () =>
-    jsonResult({
+  async () => {
+    const counts = session.getCounts();
+    return jsonResult({
+      serverVersion: SERVER_VERSION,
+      loaded: Object.values(counts).some((count) => count > 0),
       folderPath: session.folderPath,
-      counts: session.getCounts(),
+      counts,
       limits: {
         defaultLimit: session.defaultLimit,
         maxLimit: session.maxLimit
       }
-    })
+    });
+  }
 );
 
 server.registerTool(
@@ -141,7 +156,7 @@ server.registerTool(
   {
     title: 'Get Symbol Detail',
     description:
-      'Expand a symbol handle from search_symbols. Returns inheritance path, children, member count, and optionally a capped member page.',
+      'Expand a symbol handle from search_symbols (or a bare name of any kind). Class/struct returns size + inheritance + children; enum returns values + underlying type; function returns signature, address, and flags. Set includeMembers with memberLimit 0 to list all members; set raw true for the exact JSON entry.',
     inputSchema: {
       symbolId: z.string().min(1).describe('Symbol id from search_symbols, or a class/struct name.'),
       includeMembers: z.boolean().default(false).describe('Include a first page of direct members for class/struct symbols.'),
