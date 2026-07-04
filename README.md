@@ -95,20 +95,20 @@ The built application will be in the `dist` folder:
    - Generate C++ or C# offset code from collections
    - Export/import collections for sharing
 
-## MCP Server (Claude Code / Codex)
+## MCP Server (Claude Code / Codex / oh-my-pi)
 
 In addition to the desktop UI, this project ships a local stdio [MCP](https://modelcontextprotocol.io) server so AI assistants can query dumps directly.
 
-**Setup is one command** — it detects your installed client CLIs and lets you pick which to register with (no config files to edit):
+**Setup is one command** — it detects your installed clients and lets you pick which to register with (no config files to edit):
 
 ```bash
 npm install
-npm run mcp:install          # prompts you to choose Claude Code, Codex, or all
+npm run mcp:install          # prompts you to choose Claude Code, Codex, oh-my-pi, or all
 ```
 
-Or name the target directly: `npm run mcp:install -- claude` (or `codex`, or `all`).
+Or name the target directly: `npm run mcp:install -- claude` (or `codex`, `pi`, or `all`).
 
-Then reconnect your client (in Claude Code: `/mcp`) and ask it to `load_dump_folder` with your dump directory. See [docs/MCP.md](docs/MCP.md) for manual/other-client setup.
+Then reconnect your client (Claude Code: `/mcp`; oh-my-pi: `/mcp reload`) and ask it to `load_dump_folder` with your dump directory. See [docs/MCP.md](docs/MCP.md) for manual/other-client setup.
 
 It exposes these tools:
 

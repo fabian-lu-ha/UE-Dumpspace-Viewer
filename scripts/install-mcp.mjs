@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// Registers this project's MCP server with a client CLI you choose.
+// Registers this project's MCP server with a client you choose.
 // Interactive:      npm run mcp:install
-// Non-interactive:  npm run mcp:install -- claude | codex | all
+// Non-interactive:  npm run mcp:install -- claude | codex | pi | all
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
+import { homedir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 
@@ -12,6 +14,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const serverPath = resolve(here, '..', 'src', 'mcp', 'server.mjs');
 const NAME = 'dumpspace-viewer';
 const quote = (s) => `"${s}"`;
+
+const OMP_SCHEMA =
+  'https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json';
 
 function have(bin) {
   try {
@@ -32,13 +37,39 @@ function run(cmd) {
   }
 }
 
+// oh-my-pi has no registration CLI, so write its mcp.json directly.
+// Merge into any existing config instead of clobbering it.
+function writeOmpConfig() {
+  const dir = join(homedir(), '.omp', 'agent');
+  const file = join(dir, 'mcp.json');
+
+  let config = { $schema: OMP_SCHEMA, mcpServers: {} };
+  if (existsSync(file)) {
+    try {
+      config = JSON.parse(readFileSync(file, 'utf8'));
+    } catch {
+      console.log(`  [fail] oh-my-pi: ${file} is not valid JSON; left it untouched`);
+      return false;
+    }
+  }
+  if (!config.$schema) config.$schema = OMP_SCHEMA;
+  if (!config.mcpServers || typeof config.mcpServers !== 'object') config.mcpServers = {};
+
+  config.mcpServers[NAME] = { type: 'stdio', command: 'node', args: [serverPath] };
+
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+  return true;
+}
+
 const CLIENTS = [
   {
     key: 'claude',
     label: 'Claude Code',
-    bin: 'claude',
-    // Re-point any existing registration at the current path (idempotent).
+    reconnect: '/mcp -> reconnect',
+    detect: () => have('claude'),
     register() {
+      // Re-point any existing registration at the current path (idempotent).
       run(`claude mcp remove --scope user ${NAME}`);
       run(`claude mcp remove ${NAME}`);
       return run(`claude mcp add --scope user --transport stdio ${NAME} -- node ${quote(serverPath)}`);
@@ -47,24 +78,34 @@ const CLIENTS = [
   {
     key: 'codex',
     label: 'Codex',
-    bin: 'codex',
+    reconnect: 'restart Codex',
+    detect: () => have('codex'),
     register() {
       run(`codex mcp remove ${NAME}`);
       return run(`codex mcp add ${NAME} -- node ${quote(serverPath)}`);
     }
+  },
+  {
+    key: 'pi',
+    label: 'oh-my-pi (omp)',
+    aliases: ['omp', 'ohmypi'],
+    reconnect: '/mcp reload',
+    detect: () => have('omp') || existsSync(join(homedir(), '.omp')),
+    register: writeOmpConfig
   }
 ];
 
-const available = CLIENTS.map((c) => ({ ...c, present: have(c.bin) }));
+const matchesArg = (c, arg) => c.key === arg || (c.aliases || []).includes(arg);
+
+const available = CLIENTS.map((c) => ({ ...c, present: c.detect() }));
 const present = available.filter((c) => c.present);
 
 async function chooseTargets() {
   const arg = (process.argv[2] || '').toLowerCase();
 
-  // Explicit target from the command line.
   if (arg) {
     if (arg === 'all') return present;
-    const match = present.find((c) => c.key === arg);
+    const match = present.find((c) => matchesArg(c, arg));
     if (!match) {
       const names = present.map((c) => c.key).join(', ') || 'none detected';
       console.error(`No available client matches "${arg}". Detected: ${names}`);
@@ -74,18 +115,16 @@ async function chooseTargets() {
   }
 
   if (present.length === 0) {
-    console.log('No supported client CLI (claude, codex) was found on your PATH.');
-    console.log('Install Claude Code or Codex, then re-run: npm run mcp:install');
+    console.log('No supported client (claude, codex, oh-my-pi) was found.');
+    console.log('Install one, then re-run: npm run mcp:install');
     process.exit(1);
   }
 
-  // Non-interactive shell with no argument: require an explicit target.
   if (!stdin.isTTY) {
-    console.error('Non-interactive shell. Pass a target: npm run mcp:install -- <claude|codex|all>');
+    console.error('Non-interactive shell. Pass a target: npm run mcp:install -- <claude|codex|pi|all>');
     process.exit(1);
   }
 
-  // Interactive menu.
   console.log(`Register MCP server "${NAME}"`);
   console.log(`  command: node ${serverPath}\n`);
   console.log('Which client do you want to install it to?\n');
@@ -113,18 +152,19 @@ async function chooseTargets() {
 const targets = await chooseTargets();
 
 console.log('');
-let configured = 0;
+const done = [];
 for (const c of targets) {
   const ok = c.register();
   console.log(ok ? `  [ok] ${c.label}` : `  [fail] ${c.label} registration failed`);
-  if (ok) configured++;
+  if (ok) done.push(c);
 }
 
 console.log('');
-if (configured > 0) {
-  console.log(`Done - ${configured} client(s) configured.`);
-  console.log('Restart or reconnect the client (in Claude Code: /mcp), then ask it to call');
-  console.log('load_dump_folder with the path to your Dumper-7 JSON folder.');
+if (done.length > 0) {
+  console.log(`Done - ${done.length} client(s) configured. Reconnect, then call load_dump_folder:`);
+  for (const c of done) {
+    console.log(`  - ${c.label}: ${c.reconnect}`);
+  }
 } else {
   process.exitCode = 1;
 }

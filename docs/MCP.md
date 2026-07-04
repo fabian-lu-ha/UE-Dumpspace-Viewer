@@ -1,6 +1,6 @@
 # Dumpspace Viewer MCP Server
 
-This project includes a local stdio MCP server for Claude Code and Codex.
+This project includes a local stdio MCP server for Claude Code, Codex, and oh-my-pi.
 
 ## Run
 
@@ -19,17 +19,22 @@ npm install
 npm run mcp:install
 ```
 
-`mcp:install` detects the Claude Code (`claude`) and Codex (`codex`) CLIs and **prompts you to choose** which one(s) to register with. It uses the absolute path to `server.mjs` so it works from any directory, and it is safe to re-run — it re-points an existing registration at the current path (handy if you move the repo). No config files to edit by hand.
+`mcp:install` detects the Claude Code (`claude`), Codex (`codex`), and oh-my-pi (`omp`) clients and **prompts you to choose** which one(s) to register with. It uses the absolute path to `server.mjs` so it works from any directory, and it is safe to re-run — it re-points an existing registration at the current path (handy if you move the repo). For oh-my-pi it merges into `~/.omp/agent/mcp.json` without touching your other servers. No config files to edit by hand.
 
 To skip the prompt, name the target:
 
 ```bash
 npm run mcp:install -- claude   # Claude Code only
 npm run mcp:install -- codex    # Codex only
+npm run mcp:install -- pi       # oh-my-pi only (alias: omp)
 npm run mcp:install -- all      # every detected client
 ```
 
-Then **restart or reconnect** the client (in Claude Code: `/mcp` -> reconnect) and ask it to call `load_dump_folder` with your dump directory.
+Then **reconnect** the client and ask it to call `load_dump_folder` with your dump directory:
+
+- Claude Code: `/mcp` -> reconnect
+- Codex: restart Codex
+- oh-my-pi: `/mcp reload`
 
 ### Manual registration (optional)
 
@@ -41,6 +46,21 @@ claude mcp add --scope user --transport stdio dumpspace-viewer -- node /absolute
 
 # Codex
 codex mcp add dumpspace-viewer -- node /absolute/path/to/UE-Dumpspace-Viewer/src/mcp/server.mjs
+```
+
+oh-my-pi has no registration CLI. Add this to `~/.omp/agent/mcp.json` (user-level) or `.omp/mcp.json` (project-level), then run `/mcp reload` in the agent:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
+  "mcpServers": {
+    "dumpspace-viewer": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/absolute/path/to/UE-Dumpspace-Viewer/src/mcp/server.mjs"]
+    }
+  }
+}
 ```
 
 Other clients (Claude Desktop, Cursor, Cline, Windsurf, ...) use the same `mcpServers` JSON shape:
