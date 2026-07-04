@@ -116,7 +116,8 @@ It exposes these tools:
 - `get_dump_status` — report the loaded folder and per-kind symbol counts
 - `search_symbols` — search classes, structs, functions, enums, and offsets (glob `*`, OR `|`, filters like `kind:` and `inherits:`)
 - `search_members` — search a class/struct's members by name or type, optionally including inherited members
-- `get_symbol_detail` — expand a symbol: class/struct size and members, enum values, or a function's signature, address, and flags
+- `get_symbol_detail` — expand a symbol: class/struct size and members, enum values, or a function's signature, address, and flags (`memberLimit: 0` returns all members; `raw: true` includes the raw JSON entry)
+- `resolve_offsets` — resolve many `ClassName::MemberName` queries to offsets in one call; searches inherited members and falls back to a same-named function's address
 - `explain_type_relationship` — determine whether one type can be cast to another via inheritance
 
 Register it with Claude Code by pointing an MCP server entry at `node src/mcp/server.mjs`, or with Codex via `.codex/config.toml`.

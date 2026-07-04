@@ -26,10 +26,10 @@ const CursorSchema = z.string().optional().describe('Opaque cursor from a previo
 const LimitSchema = z
   .number()
   .int()
-  .positive()
+  .min(0)
   .max(1000)
   .optional()
-  .describe('Requested page size. The server caps this to its configured maxLimit.');
+  .describe('Requested page size. The server caps this to its configured maxLimit. Use 0 for all (uncapped) - intended for bounded sets like a class\'s members.');
 
 function jsonResult(value) {
   return {
@@ -124,6 +124,7 @@ server.registerTool(
         .default(['name'])
         .describe('Which member fields to match against. Use ["name","type"] for broad discovery.'),
       regex: z.boolean().optional().describe('Treat query terms as regular expressions instead of glob/substring terms.'),
+      raw: z.boolean().optional().describe('Include each member\'s raw JSON tuple ([typeInfo, offset, size, ...]).'),
       cursor: CursorSchema,
       limit: LimitSchema
     }
@@ -144,7 +145,8 @@ server.registerTool(
     inputSchema: {
       symbolId: z.string().min(1).describe('Symbol id from search_symbols, or a class/struct name.'),
       includeMembers: z.boolean().default(false).describe('Include a first page of direct members for class/struct symbols.'),
-      memberLimit: LimitSchema
+      memberLimit: LimitSchema,
+      raw: z.boolean().optional().describe('Include the raw JSON entry for the symbol (e.g. the array-of-tuples member format).')
     }
   },
   async (args) => {
@@ -169,6 +171,31 @@ server.registerTool(
     const notLoaded = requireLoaded();
     if (notLoaded) return jsonResult(notLoaded);
     return jsonResult(session.explainTypeRelationship(args));
+  }
+);
+
+server.registerTool(
+  'resolve_offsets',
+  {
+    title: 'Resolve Offsets (bulk)',
+    description:
+      'Resolve many "ClassName::MemberName" queries to offsets in a single call. Searches inherited members by default and falls back to a same-named function (returning its address). For anything not found, reports which classes were searched.',
+    inputSchema: {
+      queries: z
+        .array(z.string().min(1))
+        .min(1)
+        .describe('List of "ClassName::MemberName" strings, e.g. ["AActor::RootComponent", "UWorld::GameState"].'),
+      includeInherited: z
+        .boolean()
+        .default(true)
+        .describe('Search base classes/structs as well (most-derived class wins). Default true.'),
+      raw: z.boolean().optional().describe('Include the raw JSON entry for each resolved member/function.')
+    }
+  },
+  async (args) => {
+    const notLoaded = requireLoaded();
+    if (notLoaded) return jsonResult(notLoaded);
+    return jsonResult(session.resolveOffsets(args));
   }
 );
 

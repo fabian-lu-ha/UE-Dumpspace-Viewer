@@ -3,7 +3,7 @@ const path = require('path');
 
 const { EventBus } = require('./eventBus');
 const { matchesQuery, parseFieldFilters } = require('./query');
-const { paginate, normalizeLimit } = require('./paging');
+const { paginate } = require('./paging');
 
 const DUMP_FILES = {
   classes: 'ClassesInfo.json',
@@ -217,7 +217,9 @@ class DumpspaceSession {
     const ownerName = normalizeSymbolName(owner);
     const symbol = this.classLikeByName.get(ownerName);
     if (!symbol) {
-      return emptyPage(options, this);
+      const result = emptyPage(options, this);
+      result.searched = { classes: [], totalMembers: 0, note: `class/struct '${owner}' not found` };
+      return result;
     }
 
     const searchFields = new Set(options.searchFields || ['name']);
@@ -225,19 +227,23 @@ class DumpspaceSession {
       ? [...this.getInheritancePath(ownerName)].reverse()
       : [ownerName];
 
+    const searchedClasses = [];
+    let totalMembers = 0;
     const items = [];
     for (const currentOwner of owners) {
       const current = this.classLikeByName.get(currentOwner);
       if (!current) {
         continue;
       }
+      searchedClasses.push(currentOwner);
 
       for (const member of extractMembers(current.raw)) {
+        totalMembers += 1;
         const values = [];
         if (searchFields.has('name')) values.push(member.name);
         if (searchFields.has('type')) values.push(member.type);
         if (values.some((value) => matchesQuery(value, options.query || '*', options))) {
-          items.push({
+          const item = {
             id: `${current.kind}:${current.name}:member:${member.name}`,
             kind: 'member',
             owner: current.name,
@@ -246,12 +252,99 @@ class DumpspaceSession {
             offset: member.offset,
             offsetHex: formatOffset(member.offset),
             size: member.size
-          });
+          };
+          if (options.raw) {
+            item.raw = member.raw;
+          }
+          items.push(item);
         }
       }
     }
 
-    return paginate(items, options, this);
+    const result = paginate(items, options, this);
+    // Diagnostics: which classes were scanned and how many members exist there.
+    // Especially useful to understand an empty result with includeInherited.
+    result.searched = { classes: searchedClasses, totalMembers };
+    return result;
+  }
+
+  // Resolve many "ClassName::MemberName" queries to offsets in one call.
+  // Falls back to a same-named function (returning its address) when no member
+  // matches, and reports which classes were searched when nothing is found.
+  resolveOffsets(options = {}) {
+    const queries = Array.isArray(options.queries) ? options.queries : [];
+    const includeInherited = options.includeInherited !== false; // default true
+    const includeRaw = !!options.raw;
+
+    const results = queries.map((q) => this.resolveOneOffset(q, includeInherited, includeRaw));
+    const found = results.filter((r) => r.found).length;
+    return { total: results.length, found, missing: results.length - found, results };
+  }
+
+  resolveOneOffset(query, includeInherited, includeRaw) {
+    const raw = String(query);
+    const idx = raw.lastIndexOf('::');
+    if (idx === -1) {
+      return { query: raw, found: false, reason: "expected 'ClassName::MemberName'" };
+    }
+
+    const className = normalizeSymbolName(raw.slice(0, idx).trim());
+    const memberName = raw.slice(idx + 2).trim();
+    const symbol = this.classLikeByName.get(className);
+    if (!symbol) {
+      return { query: raw, found: false, reason: `class/struct '${className}' not found` };
+    }
+
+    const owners = includeInherited ? this.getInheritancePath(className) : [className];
+    let membersScanned = 0;
+
+    // Prefer a member (most-derived class first).
+    for (const currentOwner of owners) {
+      const current = this.classLikeByName.get(currentOwner);
+      if (!current) continue;
+      const members = extractMembers(current.raw);
+      membersScanned += members.length;
+      const member =
+        members.find((m) => m.name === memberName) ||
+        members.find((m) => m.name.toLowerCase() === memberName.toLowerCase());
+      if (member) {
+        const out = {
+          query: raw,
+          found: true,
+          kind: 'member',
+          class: currentOwner,
+          member: member.name,
+          type: member.type,
+          offset: member.offset,
+          offsetHex: formatOffset(member.offset),
+          size: member.size
+        };
+        if (includeRaw) out.raw = member.raw;
+        return out;
+      }
+    }
+
+    // Fall back to a same-named function on any searched class.
+    for (const currentOwner of owners) {
+      const fnSymbol = this.symbolById.get(`function:${currentOwner}::${memberName}`);
+      if (fnSymbol) {
+        const info = extractFunction(fnSymbol.raw);
+        const out = {
+          query: raw,
+          found: true,
+          kind: 'function',
+          class: currentOwner,
+          member: memberName,
+          address: info ? info.address : null,
+          addressHex: info && info.address != null ? formatOffset(info.address) : null,
+          signature: info ? formatFunctionSignature(memberName, info) : memberName
+        };
+        if (includeRaw) out.raw = fnSymbol.raw;
+        return out;
+      }
+    }
+
+    return { query: raw, found: false, reason: 'member/function not found', searchedClasses: owners, membersScanned };
   }
 
   getSymbolDetail(options = {}) {
@@ -268,6 +361,12 @@ class DumpspaceSession {
       inheritancePath: this.getInheritancePath(symbol.name)
     };
 
+    // Raw JSON entry as stored in the dump (e.g. the array-of-tuples member
+    // format), for callers that need the exact shape.
+    if (options.raw) {
+      detail.raw = symbol.raw;
+    }
+
     if (symbol.kind === 'class' || symbol.kind === 'struct') {
       const size = extractClassSize(symbol.raw);
       detail.size = size;
@@ -275,10 +374,12 @@ class DumpspaceSession {
       detail.memberCount = extractMembers(symbol.raw).length;
 
       if (options.includeMembers) {
+        // Pass memberLimit through untouched; paginate() normalizes it once
+        // (0 => all). Pre-normalizing here would double-normalize Infinity.
         detail.members = this.searchMembers({
           owner: symbol.name,
           query: '*',
-          limit: normalizeLimit(options.memberLimit, this)
+          limit: options.memberLimit
         }).items;
       }
     } else if (symbol.kind === 'enum') {
@@ -435,7 +536,8 @@ function extractMembers(raw) {
           typeInfo: value[0],
           type: formatType(value[0]),
           offset: value[1],
-          size: value[2] || 0
+          size: value[2] || 0,
+          raw: value
         });
       }
     }

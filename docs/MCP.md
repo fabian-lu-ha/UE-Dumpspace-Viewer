@@ -101,3 +101,36 @@ kind:class assignableTo:UObject
 ```
 
 Use `get_symbol_detail` and `search_members` to expand a handle. Use `explain_type_relationship` when deciding whether one type can be treated as another through inheritance.
+
+## Bulk offset resolution
+
+`resolve_offsets` looks up many members in one call instead of paging through `search_members` per class. It searches inherited members by default and, when no member matches, falls back to a same-named function (returning its address) - useful when you are not sure whether a name is a field or a UFUNCTION.
+
+```json
+{
+  "queries": ["AActor::RootComponent", "UWorld::PersistentLevel", "AActor::K2_DestroyActor", "AActor::Nope"],
+  "includeInherited": true
+}
+```
+
+returns each query with its offset (members) or address (functions), and for misses reports which classes were searched:
+
+```json
+{
+  "total": 4,
+  "found": 3,
+  "missing": 1,
+  "results": [
+    { "found": true, "kind": "member", "class": "AActor", "member": "RootComponent", "offsetHex": "0x1e0", "type": "USceneComponent*", "size": 8 },
+    { "found": true, "kind": "member", "class": "UWorld", "member": "PersistentLevel", "offsetHex": "0x50" },
+    { "found": true, "kind": "function", "class": "AActor", "member": "K2_DestroyActor", "addressHex": "0x4134580" },
+    { "found": false, "reason": "member/function not found", "searchedClasses": ["AActor", "UObject"], "membersScanned": 81 }
+  ]
+}
+```
+
+## Raw JSON and full member listings
+
+- Pass `raw: true` to `get_symbol_detail` or `search_members` (or `resolve_offsets`) to include the raw dump entry - the array-of-tuples member format `[[TypeName, TypeKind, Mod, []], Offset, Size, Flags]`.
+- Pass `memberLimit: 0` to `get_symbol_detail` (or `limit: 0` to a search) to return all members uncapped, instead of a single page.
+- `search_members` results include a `searched` field listing the classes scanned and total member count - handy for understanding an empty `includeInherited` result.

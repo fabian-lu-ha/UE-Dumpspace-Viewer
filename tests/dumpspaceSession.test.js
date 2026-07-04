@@ -277,6 +277,114 @@ test('multi-element __InheritInfo resolves the direct parent, not the root', () 
   assert.deepEqual(rel.path, ['ACharacter', 'APawn', 'AActor']);
 });
 
+test('resolveOffsets resolves members, falls back to functions, and reports misses', () => {
+  const session = new DumpspaceSession();
+  session.loadData({
+    classes: {
+      UObject: [{ __InheritInfo: [] }],
+      AActor: [
+        { __InheritInfo: ['UObject'] },
+        { RootComponent: [['USceneComponent', 'C', '*', []], 0x1e0, 0x8, 1] }
+      ],
+      ADBDPlayer: [{ __InheritInfo: ['AActor', 'UObject'] }]
+    },
+    functions: {
+      AActor: [
+        {
+          K2_DestroyActor: [['void', 'D', '', []], [], 0x4134580, 'Final|Native']
+        }
+      ]
+    }
+  });
+
+  const res = session.resolveOffsets({
+    queries: [
+      'AActor::RootComponent',       // direct member
+      'ADBDPlayer::RootComponent',   // inherited member
+      'AActor::K2_DestroyActor',     // function fallback
+      'AActor::Nope'                 // missing
+    ],
+    includeInherited: true
+  });
+
+  assert.equal(res.total, 4);
+  assert.equal(res.found, 3);
+  assert.equal(res.missing, 1);
+
+  const [direct, inherited, fn, missing] = res.results;
+  assert.deepEqual(
+    { kind: direct.kind, class: direct.class, offsetHex: direct.offsetHex },
+    { kind: 'member', class: 'AActor', offsetHex: '0x1e0' }
+  );
+  assert.equal(inherited.found, true);
+  assert.equal(inherited.class, 'AActor'); // resolved via inheritance
+  assert.deepEqual(
+    { kind: fn.kind, addressHex: fn.addressHex },
+    { kind: 'function', addressHex: '0x4134580' }
+  );
+  assert.equal(missing.found, false);
+  assert.ok(missing.searchedClasses.includes('AActor'));
+  assert.equal(typeof missing.membersScanned, 'number');
+});
+
+test('memberLimit 0 returns all members uncapped', () => {
+  const session = new DumpspaceSession({ defaultLimit: 2, maxLimit: 3 });
+  session.loadData({
+    classes: {
+      Big: [
+        { A: [['int32', 'D'], 0x0, 0x4] },
+        { B: [['int32', 'D'], 0x4, 0x4] },
+        { C: [['int32', 'D'], 0x8, 0x4] },
+        { D: [['int32', 'D'], 0xc, 0x4] },
+        { E: [['int32', 'D'], 0x10, 0x4] }
+      ]
+    }
+  });
+
+  const capped = session.getSymbolDetail({ name: 'Big', includeMembers: true }); // default 2
+  assert.equal(capped.members.length, 2);
+
+  const all = session.getSymbolDetail({ name: 'Big', includeMembers: true, memberLimit: 0 });
+  assert.equal(all.members.length, 5);
+  assert.equal(all.memberCount, 5);
+});
+
+test('raw mode exposes the raw JSON entry and member tuples', () => {
+  const session = new DumpspaceSession();
+  session.loadData({
+    classes: {
+      AActor: [
+        { __InheritInfo: [] },
+        { RootComponent: [['USceneComponent', 'C', '*', []], 0x1e0, 0x8, 1] }
+      ]
+    }
+  });
+
+  const detail = session.getSymbolDetail({ name: 'AActor', raw: true });
+  assert.ok(Array.isArray(detail.raw));
+
+  const members = session.searchMembers({ owner: 'AActor', query: 'RootComponent', raw: true });
+  assert.deepEqual(members.items[0].raw, [['USceneComponent', 'C', '*', []], 0x1e0, 0x8, 1]);
+});
+
+test('searchMembers reports which classes were searched', () => {
+  const session = new DumpspaceSession();
+  session.loadData({
+    classes: {
+      UObject: [{ __InheritInfo: [] }],
+      AActor: [{ __InheritInfo: ['UObject'] }, { Role: [['int32', 'D'], 0x194, 0x4] }],
+      APawn: [{ __InheritInfo: ['AActor', 'UObject'] }]
+    }
+  });
+
+  const empty = session.searchMembers({ owner: 'APawn', query: 'DoesNotExist', includeInherited: true });
+  assert.equal(empty.items.length, 0);
+  assert.deepEqual(empty.searched.classes.sort(), ['AActor', 'APawn', 'UObject']);
+
+  const bad = session.searchMembers({ owner: 'Ghost', query: '*' });
+  assert.match(bad.searched.note, /not found/);
+});
+
 test('limits are capped by maxLimit but default when omitted', () => {
   const session = new DumpspaceSession({ defaultLimit: 2, maxLimit: 3 });
   session.loadData(fixture);

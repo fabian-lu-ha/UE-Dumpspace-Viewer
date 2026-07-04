@@ -54,6 +54,7 @@ test('stdio MCP server loads a dump and supports paged search, member search, an
         'get_dump_status',
         'get_symbol_detail',
         'load_dump_folder',
+        'resolve_offsets',
         'search_members',
         'search_symbols'
       ]
