@@ -194,7 +194,7 @@ server.registerTool(
   {
     title: 'Resolve Offsets (bulk)',
     description:
-      'Resolve many "ClassName::MemberName" queries to offsets in a single call. Searches inherited members by default and falls back to a same-named function (returning its address). For anything not found, reports which classes were searched.',
+      'Resolve/verify many "ClassName::MemberName" queries to offsets in a single call - use this instead of parsing the dump JSON yourself. Searches inherited members by default and falls back to a same-named function (returning its address). A miss reports which classes were searched plus "suggestions": the closest real names, so a typo or wrong case surfaces the right one.',
     inputSchema: {
       queries: z
         .array(z.string().min(1))

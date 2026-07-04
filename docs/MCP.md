@@ -120,7 +120,7 @@ Use `get_symbol_detail` and `search_members` to expand a handle. Use `explain_ty
 
 ## Bulk offset resolution
 
-`resolve_offsets` looks up many members in one call instead of paging through `search_members` per class. It searches inherited members by default and, when no member matches, falls back to a same-named function (returning its address) - useful when you are not sure whether a name is a field or a UFUNCTION.
+`resolve_offsets` is the go-to for looking up or verifying known offsets - use it instead of parsing the dump JSON yourself. It resolves many members in one call instead of paging through `search_members` per class, searches inherited members by default, and falls back to a same-named function (returning its address) when a name is a UFUNCTION rather than a field. Matching is case-insensitive, and a miss returns `suggestions` (the closest real member/function names) so a typo surfaces the right name.
 
 ```json
 {

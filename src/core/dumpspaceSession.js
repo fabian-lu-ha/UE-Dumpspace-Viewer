@@ -30,6 +30,7 @@ class DumpspaceSession {
     this.classLikeByName = new Map();
     this.childrenByName = new Map();
     this.symbolByName = new Map();
+    this.functionNamesByOwner = new Map();
     this.folderPath = null;
   }
 
@@ -86,6 +87,7 @@ class DumpspaceSession {
     this.symbolById = new Map();
     this.classLikeByName = new Map();
     this.childrenByName = new Map();
+    this.functionNamesByOwner = new Map();
 
     this.addClassLikeSymbols('class', this.data.classes);
     this.addClassLikeSymbols('struct', this.data.structs);
@@ -102,6 +104,12 @@ class DumpspaceSession {
         summary: formatFunctionSignature(fn.name, info),
         raw: fn.raw
       });
+      if (fn.owner) {
+        if (!this.functionNamesByOwner.has(fn.owner)) {
+          this.functionNamesByOwner.set(fn.owner, []);
+        }
+        this.functionNamesByOwner.get(fn.owner).push(fn.name);
+      }
     }
 
     for (const symbol of this.symbols) {
@@ -297,6 +305,7 @@ class DumpspaceSession {
 
     const owners = includeInherited ? this.getInheritancePath(className) : [className];
     let membersScanned = 0;
+    const candidateNames = [];
 
     // Prefer a member (most-derived class first).
     for (const currentOwner of owners) {
@@ -304,6 +313,7 @@ class DumpspaceSession {
       if (!current) continue;
       const members = extractMembers(current.raw);
       membersScanned += members.length;
+      for (const m of members) candidateNames.push(m.name);
       const member =
         members.find((m) => m.name === memberName) ||
         members.find((m) => m.name.toLowerCase() === memberName.toLowerCase());
@@ -344,7 +354,16 @@ class DumpspaceSession {
       }
     }
 
-    return { query: raw, found: false, reason: 'member/function not found', searchedClasses: owners, membersScanned };
+    // Miss: offer the closest real names (members + functions) across the
+    // searched classes, so a typo or case mismatch surfaces the right name
+    // instead of forcing the caller to grep the raw dump.
+    for (const currentOwner of owners) {
+      const fnNames = this.functionNamesByOwner.get(currentOwner);
+      if (fnNames) candidateNames.push(...fnNames);
+    }
+    const suggestions = suggestNames(memberName, candidateNames);
+
+    return { query: raw, found: false, reason: 'member/function not found', searchedClasses: owners, membersScanned, suggestions };
   }
 
   getSymbolDetail(options = {}) {
@@ -565,6 +584,60 @@ function extractParent(raw) {
   }
 
   return null;
+}
+
+// Rank candidate names by closeness to a query: exact case-insensitive match
+// first, then substring overlap, then small edit distance. Used to suggest the
+// right name when a resolve_offsets query misses (typo / wrong case).
+function suggestNames(query, candidates, limit = 5) {
+  const q = String(query).toLowerCase();
+  if (!q) return [];
+  const maxDistance = Math.max(3, Math.floor(q.length / 2));
+  const best = new Map(); // name -> score (lower is better)
+
+  for (const name of candidates) {
+    const n = String(name).toLowerCase();
+    let score;
+    if (n === q) {
+      score = 0;
+    } else if (n.includes(q) || q.includes(n)) {
+      score = 1 + Math.abs(n.length - q.length) / 100;
+    } else {
+      const distance = levenshtein(q, n);
+      if (distance > maxDistance) continue;
+      score = 2 + distance;
+    }
+    if (!best.has(name) || score < best.get(name)) {
+      best.set(name, score);
+    }
+  }
+
+  return [...best.entries()]
+    .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([name]) => name);
+}
+
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+
+  const row = new Array(n + 1);
+  for (let j = 0; j <= n; j++) row[j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = temp;
+    }
+  }
+
+  return row[n];
 }
 
 // Total instance size of a class/struct, stored as __MDKClassSize.

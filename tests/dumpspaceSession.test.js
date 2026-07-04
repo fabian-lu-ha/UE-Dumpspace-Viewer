@@ -327,6 +327,36 @@ test('resolveOffsets resolves members, falls back to functions, and reports miss
   assert.equal(typeof missing.membersScanned, 'number');
 });
 
+test('resolveOffsets suggests close names on a miss and resolves case-insensitively', () => {
+  const session = new DumpspaceSession();
+  session.loadData({
+    classes: {
+      UObject: [{ __InheritInfo: [] }],
+      AActor: [
+        { __InheritInfo: ['UObject'] },
+        { RootComponent: [['USceneComponent', 'C', '*', []], 0x1e0, 0x8, 1] }
+      ]
+    },
+    functions: {
+      AActor: [{ K2_DestroyActor: [['void', 'D', '', []], [], 0x1234, 'Native'] }]
+    }
+  });
+
+  // Exact-but-wrong-case still resolves (case-insensitive fallback).
+  const cased = session.resolveOffsets({ queries: ['AActor::rootcomponent'] });
+  assert.equal(cased.results[0].found, true);
+  assert.equal(cased.results[0].offsetHex, '0x1e0');
+
+  // A real typo misses but suggests the right member name first.
+  const typo = session.resolveOffsets({ queries: ['AActor::RootComponnt'] });
+  assert.equal(typo.results[0].found, false);
+  assert.equal(typo.results[0].suggestions[0], 'RootComponent');
+
+  // Function names are candidates too.
+  const fnTypo = session.resolveOffsets({ queries: ['AActor::K2_DestroyActr'] });
+  assert.ok(fnTypo.results[0].suggestions.includes('K2_DestroyActor'));
+});
+
 test('memberLimit 0 returns all members uncapped', () => {
   const session = new DumpspaceSession({ defaultLimit: 2, maxLimit: 3 });
   session.loadData({
