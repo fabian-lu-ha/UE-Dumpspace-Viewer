@@ -10,24 +10,50 @@ npm run mcp
 
 The server keeps dump data in memory for the current MCP process. Call `load_dump_folder` before using search or inspection tools.
 
-## Claude Code
+## Setup (one command)
 
-Install the server in Claude Code's local project config:
+From the repo root:
 
 ```bash
-claude mcp add --transport stdio dumpspace-viewer -- node src/mcp/server.mjs
+npm install
+npm run mcp:install
 ```
 
-Using an absolute path is recommended if you launch Claude from outside the repository.
+`mcp:install` detects the Claude Code (`claude`) and Codex (`codex`) CLIs and **prompts you to choose** which one(s) to register with. It uses the absolute path to `server.mjs` so it works from any directory, and it is safe to re-run — it re-points an existing registration at the current path (handy if you move the repo). No config files to edit by hand.
 
-## Codex
+To skip the prompt, name the target:
 
-Project-scoped configuration is included in `.codex/config.toml`:
+```bash
+npm run mcp:install -- claude   # Claude Code only
+npm run mcp:install -- codex    # Codex only
+npm run mcp:install -- all      # every detected client
+```
 
-```toml
-[mcp_servers.dumpspace_viewer]
-command = "node"
-args = ["src/mcp/server.mjs"]
+Then **restart or reconnect** the client (in Claude Code: `/mcp` -> reconnect) and ask it to call `load_dump_folder` with your dump directory.
+
+### Manual registration (optional)
+
+If you prefer to register it yourself, or use another client, the CLIs are:
+
+```bash
+# Claude Code
+claude mcp add --scope user --transport stdio dumpspace-viewer -- node /absolute/path/to/UE-Dumpspace-Viewer/src/mcp/server.mjs
+
+# Codex
+codex mcp add dumpspace-viewer -- node /absolute/path/to/UE-Dumpspace-Viewer/src/mcp/server.mjs
+```
+
+Other clients (Claude Desktop, Cursor, Cline, Windsurf, ...) use the same `mcpServers` JSON shape:
+
+```json
+{
+  "mcpServers": {
+    "dumpspace-viewer": {
+      "command": "node",
+      "args": ["/absolute/path/to/UE-Dumpspace-Viewer/src/mcp/server.mjs"]
+    }
+  }
+}
 ```
 
 ## Query Model
