@@ -5,6 +5,8 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
+    "test": "node --test",
+    "mcp": "node src/mcp/server.mjs",
     "build": "electron-builder",
     "build:win": "electron-builder --win"
   },
@@ -65,6 +67,8 @@
     }
   },
   "dependencies": {
-    "vis-network": "10.0.2"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "vis-network": "10.0.2",
+    "zod": "^4.4.3"
   }
 }
